@@ -46,7 +46,7 @@ public class MainActivity extends Activity {
     private final ArrayList<View> pageStack = new ArrayList<>();
 
     private static final String UPDATE_MANIFEST_URL =
-        "https://github.com/VeryyyNooob/Dunia-Cilik/raw/refs/heads/main/update.json";
+        "https://api.github.com/repos/VeryyyNooob/Dunia-Cilik/contents/update.json?ref=main";
 
     private DownloadManager downloadManager;
     private long updateDownloadId = -1;
@@ -626,6 +626,7 @@ public class MainActivity extends Activity {
                 connection.setConnectTimeout(10000);
                 connection.setReadTimeout(15000);
                 connection.setInstanceFollowRedirects(true);
+                connection.setRequestProperty("Accept", "application/vnd.github.raw");
                 connection.setRequestProperty("Cache-Control", "no-cache");
                 connection.setRequestProperty("Pragma", "no-cache");
 

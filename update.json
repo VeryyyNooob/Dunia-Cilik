@@ -1,7 +1,7 @@
 {
-  "versionCode": 7,
-  "versionName": "1.0.6",
-  "apkUrl": "https://github.com/VeryyyNooob/Dunia-Cilik/releases/download/v1.0.6/Dunia-Cilik-v1.0.6.apk",
-  "releaseNotes": "Pembaikan URL manifest kemas kini dan pengendalian cache supaya semakan versi lebih konsisten.",
-  "sha256": "03914dcc425a55cb4bba8754d7bb6e168be3ea1a863c2d7ffa87ccd83ab36d64"
+  "versionCode": 8,
+  "versionName": "1.0.7",
+  "apkUrl": "https://github.com/VeryyyNooob/Dunia-Cilik/releases/download/v1.0.7/Dunia-Cilik-v1.0.7.apk",
+  "releaseNotes": "Pembaikan endpoint semakan kemas kini menggunakan GitHub API untuk mengelakkan masalah cache manifest lama.",
+  "sha256": "bce51ff60dd7cf6dcbc47996a24e0619463d883e6d189b532a1bb3f88ee28503"
 }
