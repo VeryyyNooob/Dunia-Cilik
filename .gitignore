@@ -1,0 +1,34 @@
+# Android / Gradle build outputs
+.gradle/
+build/
+**/build/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Local machine configuration
+local.properties
+*.iml
+.idea/
+.vscode/
+
+# Signing keys and credentials
+*.jks
+*.keystore
+*.p12
+*.pfx
+key.properties
+secrets.properties
+.env
+.env.*
+
+# Backups and temporary files
+*.bak
+*.bak-*
+*.tmp
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
