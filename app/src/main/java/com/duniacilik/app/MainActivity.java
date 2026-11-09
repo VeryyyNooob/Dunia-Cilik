@@ -15,7 +15,9 @@ import android.os.Environment;
 import android.provider.Settings;
 import org.json.JSONObject;
 import java.io.BufferedReader;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.security.MessageDigest;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import android.graphics.Color;
@@ -48,6 +50,7 @@ public class MainActivity extends Activity {
 
     private DownloadManager downloadManager;
     private long updateDownloadId = -1;
+    private String updateExpectedSha256 = "";
     private BroadcastReceiver updateDownloadReceiver;
     private boolean updateReceiverRegistered = false;
 
@@ -644,11 +647,17 @@ public class MainActivity extends Activity {
                 int remoteCode = json.getInt("versionCode");
                 String remoteName = json.getString("versionName");
                 String apkUrl = json.getString("apkUrl");
+                String sha256 = json.getString("sha256")
+                    .trim().toLowerCase(java.util.Locale.ROOT);
                 String notes = json.optString(
                     "releaseNotes","Penambahbaikan aplikasi.");
 
                 if (!apkUrl.startsWith("https://")) {
                     throw new Exception("Pautan APK bukan HTTPS");
+                }
+
+                if (!sha256.matches("[0-9a-f]{64}")) {
+                    throw new Exception("SHA-256 dalam manifest tidak sah");
                 }
 
                 PackageInfo info = getPackageManager()
@@ -658,7 +667,7 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     if (remoteCode > currentCode) {
                         showUpdateAvailable(
-                            remoteName,remoteCode,apkUrl,notes);
+                            remoteName,remoteCode,apkUrl,notes,sha256);
                     } else {
                         Toast.makeText(this,
                             "Dunia Cilik sudah versi terkini.",
@@ -680,7 +689,7 @@ public class MainActivity extends Activity {
 
     private void showUpdateAvailable(
         String versionName,int versionCode,
-        String apkUrl,String notes) {
+        String apkUrl,String notes,String sha256) {
 
         new android.app.AlertDialog.Builder(this)
             .setTitle("Kemas Kini Dunia Cilik")
@@ -688,17 +697,19 @@ public class MainActivity extends Activity {
                 "Versi baharu: " + versionName +
                 " (build " + versionCode + ")\n\n" +
                 notes + "\n\n" +
-                "Muat turun APK untuk memasang versi baharu?"
+                "Tekan Kemas Kini Sekarang. App akan memuat turun " +
+                "dan menyediakan pemasangan secara automatik."
             )
             .setNegativeButton("Nanti", (d,w)->d.dismiss())
-            .setPositiveButton("Muat Turun", (d,w)->{
+            .setPositiveButton("Kemas Kini Sekarang", (d,w)->{
                 d.dismiss();
-                downloadUpdate(apkUrl,versionName);
+                downloadUpdate(apkUrl,versionName,sha256);
             })
             .show();
     }
 
-    private void downloadUpdate(String apkUrl,String versionName) {
+    private void downloadUpdate(
+        String apkUrl,String versionName,String sha256) {
         if (Build.VERSION.SDK_INT >= 26 &&
             !getPackageManager().canRequestPackageInstalls()) {
 
@@ -729,12 +740,14 @@ public class MainActivity extends Activity {
             }
 
             registerUpdateReceiver();
+            updateExpectedSha256 = sha256;
 
             DownloadManager.Request request =
                 new DownloadManager.Request(Uri.parse(apkUrl));
 
             request.setTitle("Dunia Cilik " + versionName);
-            request.setDescription("Memuat turun kemas kini...");
+            request.setDescription(
+                "Memuat turun dan menyediakan pemasangan automatik...");
             request.setMimeType(
                 "application/vnd.android.package-archive");
             request.setNotificationVisibility(
@@ -756,6 +769,30 @@ public class MainActivity extends Activity {
                 "Gagal memulakan muat turun: " + e.getMessage(),
                 Toast.LENGTH_LONG).show();
         }
+    }
+
+    private String calculateSha256(Uri uri) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+
+        try (InputStream input = getContentResolver().openInputStream(uri)) {
+            if (input == null) {
+                throw new Exception("Tidak dapat membaca fail APK");
+            }
+
+            byte[] buffer = new byte[8192];
+            int count;
+
+            while ((count = input.read(buffer)) != -1) {
+                digest.update(buffer,0,count);
+            }
+        }
+
+        StringBuilder result = new StringBuilder();
+        for (byte value : digest.digest()) {
+            result.append(String.format(
+                java.util.Locale.ROOT,"%02x",value & 0xff));
+        }
+        return result.toString();
     }
 
     private void registerUpdateReceiver() {
@@ -797,6 +834,17 @@ public class MainActivity extends Activity {
                     if (apkUri == null) {
                         throw new Exception("Fail APK tidak ditemui");
                     }
+
+                    String actualSha256 = calculateSha256(apkUri);
+                    if (!actualSha256.equalsIgnoreCase(
+                        updateExpectedSha256)) {
+                        throw new Exception(
+                            "SHA-256 tidak sepadan. APK tidak akan dipasang.");
+                    }
+
+                    Toast.makeText(MainActivity.this,
+                        "Muat turun selesai. Membuka pemasang...",
+                        Toast.LENGTH_LONG).show();
 
                     Intent install = new Intent(Intent.ACTION_VIEW);
                     install.setDataAndType(
