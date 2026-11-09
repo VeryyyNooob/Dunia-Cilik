@@ -846,10 +846,15 @@ public class MainActivity extends Activity {
                         "Muat turun selesai. Membuka pemasang...",
                         Toast.LENGTH_LONG).show();
 
-                    Intent install = new Intent(Intent.ACTION_VIEW);
+                    Intent install = new Intent(
+                        Intent.ACTION_INSTALL_PACKAGE);
                     install.setDataAndType(
                         apkUri,"application/vnd.android.package-archive");
-                    install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    install.setClipData(
+                        android.content.ClipData.newUri(
+                            getContentResolver(),"Dunia Cilik update",apkUri));
+                    install.addFlags(
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION);
                     install.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     startActivity(install);
 
