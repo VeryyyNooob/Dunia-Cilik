@@ -1,6 +1,23 @@
 package com.duniacilik.app;
 
 import android.app.Activity;
+import android.app.DownloadManager;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.database.Cursor;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Environment;
+import android.provider.Settings;
+import org.json.JSONObject;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -25,6 +42,14 @@ public class MainActivity extends Activity {
     private String selectedAge = "5–7 Tahun";
     private LinearLayout content;
     private final ArrayList<View> pageStack = new ArrayList<>();
+
+    private static final String UPDATE_MANIFEST_URL =
+        "https://raw.githubusercontent.com/VeryyyNooob/Dunia-Cilik/main/update.json";
+
+    private DownloadManager downloadManager;
+    private long updateDownloadId = -1;
+    private BroadcastReceiver updateDownloadReceiver;
+    private boolean updateReceiverRegistered = false;
 
 
     private final String[][] modules = {
@@ -577,7 +602,240 @@ public class MainActivity extends Activity {
                 "• Mengawal kandungan mengikut umur\n\n"+
                 "Dashboard lengkap akan dibangunkan dalam fasa seterusnya."
             )
+            .setNeutralButton("Semak Kemas Kini",(d,w)->{
+                d.dismiss();
+                checkForUpdates();
+            })
             .setPositiveButton("Baik",(d,w)->d.dismiss())
             .show();
+    }
+
+    private void checkForUpdates() {
+        Toast.makeText(this,"Sedang menyemak kemas kini...",
+            Toast.LENGTH_SHORT).show();
+
+        new Thread(() -> {
+            HttpURLConnection connection = null;
+            try {
+                URL url = new URL(UPDATE_MANIFEST_URL);
+                connection = (HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("GET");
+                connection.setConnectTimeout(10000);
+                connection.setReadTimeout(15000);
+                connection.setInstanceFollowRedirects(true);
+
+                int response = connection.getResponseCode();
+                if (response != HttpURLConnection.HTTP_OK) {
+                    throw new Exception("HTTP " + response);
+                }
+
+                StringBuilder body = new StringBuilder();
+                try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(
+                        connection.getInputStream(),
+                        java.nio.charset.StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        body.append(line);
+                    }
+                }
+
+                JSONObject json = new JSONObject(body.toString());
+                int remoteCode = json.getInt("versionCode");
+                String remoteName = json.getString("versionName");
+                String apkUrl = json.getString("apkUrl");
+                String notes = json.optString(
+                    "releaseNotes","Penambahbaikan aplikasi.");
+
+                if (!apkUrl.startsWith("https://")) {
+                    throw new Exception("Pautan APK bukan HTTPS");
+                }
+
+                PackageInfo info = getPackageManager()
+                    .getPackageInfo(getPackageName(),0);
+                int currentCode = info.versionCode;
+
+                runOnUiThread(() -> {
+                    if (remoteCode > currentCode) {
+                        showUpdateAvailable(
+                            remoteName,remoteCode,apkUrl,notes);
+                    } else {
+                        Toast.makeText(this,
+                            "Dunia Cilik sudah versi terkini.",
+                            Toast.LENGTH_LONG).show();
+                    }
+                });
+
+            } catch (Exception e) {
+                String error = e.getMessage() == null
+                    ? "Ralat tidak diketahui" : e.getMessage();
+                runOnUiThread(() -> Toast.makeText(this,
+                    "Tidak dapat menyemak kemas kini: " + error,
+                    Toast.LENGTH_LONG).show());
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
+        }).start();
+    }
+
+    private void showUpdateAvailable(
+        String versionName,int versionCode,
+        String apkUrl,String notes) {
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Kemas Kini Dunia Cilik")
+            .setMessage(
+                "Versi baharu: " + versionName +
+                " (build " + versionCode + ")\n\n" +
+                notes + "\n\n" +
+                "Muat turun APK untuk memasang versi baharu?"
+            )
+            .setNegativeButton("Nanti", (d,w)->d.dismiss())
+            .setPositiveButton("Muat Turun", (d,w)->{
+                d.dismiss();
+                downloadUpdate(apkUrl,versionName);
+            })
+            .show();
+    }
+
+    private void downloadUpdate(String apkUrl,String versionName) {
+        if (Build.VERSION.SDK_INT >= 26 &&
+            !getPackageManager().canRequestPackageInstalls()) {
+
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Benarkan Pemasangan")
+                .setMessage(
+                    "Benarkan Dunia Cilik memasang kemas kini. " +
+                    "Aktifkan pilihan Benarkan daripada sumber ini, " +
+                    "kemudian kembali ke aplikasi."
+                )
+                .setNegativeButton("Batal",(d,w)->d.dismiss())
+                .setPositiveButton("Buka Tetapan",(d,w)->{
+                    Intent settings = new Intent(
+                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:" + getPackageName()));
+                    startActivity(settings);
+                })
+                .show();
+            return;
+        }
+
+        try {
+            downloadManager = (DownloadManager)
+                getSystemService(Context.DOWNLOAD_SERVICE);
+
+            if (downloadManager == null) {
+                throw new Exception("DownloadManager tidak tersedia");
+            }
+
+            registerUpdateReceiver();
+
+            DownloadManager.Request request =
+                new DownloadManager.Request(Uri.parse(apkUrl));
+
+            request.setTitle("Dunia Cilik " + versionName);
+            request.setDescription("Memuat turun kemas kini...");
+            request.setMimeType(
+                "application/vnd.android.package-archive");
+            request.setNotificationVisibility(
+                DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+            request.setAllowedOverMetered(true);
+            request.setAllowedOverRoaming(false);
+            request.setDestinationInExternalFilesDir(
+                this,Environment.DIRECTORY_DOWNLOADS,
+                "Dunia-Cilik-update.apk");
+
+            updateDownloadId = downloadManager.enqueue(request);
+
+            Toast.makeText(this,
+                "Muat turun bermula. Tunggu sehingga selesai.",
+                Toast.LENGTH_LONG).show();
+
+        } catch (Exception e) {
+            Toast.makeText(this,
+                "Gagal memulakan muat turun: " + e.getMessage(),
+                Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void registerUpdateReceiver() {
+        if (updateReceiverRegistered) return;
+
+        updateDownloadReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context,Intent intent) {
+                if (!DownloadManager.ACTION_DOWNLOAD_COMPLETE
+                    .equals(intent.getAction())) return;
+
+                long completedId = intent.getLongExtra(
+                    DownloadManager.EXTRA_DOWNLOAD_ID,-1);
+
+                if (completedId != updateDownloadId) return;
+
+                DownloadManager.Query query =
+                    new DownloadManager.Query().setFilterById(
+                        updateDownloadId);
+
+                try (Cursor cursor = downloadManager.query(query)) {
+                    if (cursor == null || !cursor.moveToFirst()) {
+                        throw new Exception("Status muat turun tidak ditemui");
+                    }
+
+                    int status = cursor.getInt(cursor.getColumnIndexOrThrow(
+                        DownloadManager.COLUMN_STATUS));
+
+                    if (status != DownloadManager.STATUS_SUCCESSFUL) {
+                        int reason = cursor.getInt(
+                            cursor.getColumnIndexOrThrow(
+                                DownloadManager.COLUMN_REASON));
+                        throw new Exception("Muat turun gagal (" + reason + ")");
+                    }
+
+                    Uri apkUri = downloadManager.getUriForDownloadedFile(
+                        updateDownloadId);
+
+                    if (apkUri == null) {
+                        throw new Exception("Fail APK tidak ditemui");
+                    }
+
+                    Intent install = new Intent(Intent.ACTION_VIEW);
+                    install.setDataAndType(
+                        apkUri,"application/vnd.android.package-archive");
+                    install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    install.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(install);
+
+                } catch (Exception e) {
+                    Toast.makeText(MainActivity.this,
+                        "Tidak dapat membuka pemasang: " + e.getMessage(),
+                        Toast.LENGTH_LONG).show();
+                }
+            }
+        };
+
+        IntentFilter filter = new IntentFilter(
+            DownloadManager.ACTION_DOWNLOAD_COMPLETE);
+
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(updateDownloadReceiver,filter,
+                Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(updateDownloadReceiver,filter);
+        }
+
+        updateReceiverRegistered = true;
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (updateReceiverRegistered &&
+            updateDownloadReceiver != null) {
+            try {
+                unregisterReceiver(updateDownloadReceiver);
+            } catch (Exception ignored) {
+            }
+            updateReceiverRegistered = false;
+        }
+        super.onDestroy();
     }
 }
